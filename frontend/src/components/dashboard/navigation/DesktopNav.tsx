@@ -66,7 +66,9 @@ function DesktopNav() {
 
   const { profile } = data
 
-
+  if (!profile) {
+    return null
+  }
 
 
 
@@ -89,7 +91,7 @@ function DesktopNav() {
         <div className=" flex justify-between items-center">
           <div className="flex items-center justify-center gap-4">
             <div className="size-10 bg-brand-200 rounded-full flex aspect-video overflow-hidden justify-center items-center">
-              {profile.profilePicture ? <img src={`${profile.profilePicture}`} alt="user profile pictures" className="w-full object cover h-full" /> : <p className="font-bold text-brand-500">{getInitials(profile.name)}</p>}
+              {profile?.profilePicture ? <img src={`${profile.profilePicture}`} alt="user profile pictures" className="w-full object cover h-full" /> : <p className="font-bold text-brand-500">{getInitials(profile.name)}</p>}
             </div>
 
             <p className="text-brand-500 font-medium">{profile.name}</p>

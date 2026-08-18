@@ -15,6 +15,7 @@ import React from "react"
 import { clearAuth } from "@/lib/authStorage"
 import type { ContactDTO } from "@/types"
 import { useAlertStore } from "@/store/useAlertStore"
+import HomeEmpty from "./HomeEmpty"
 
 
 
@@ -40,6 +41,7 @@ function Home() {
 
         toast.error(data.message)
         clearAuth()
+        navigate(0)
       }
     }
 
@@ -50,7 +52,6 @@ function Home() {
     return null;
   }
 
-  const { profile } = data
 
 
   const { mutate } = useMutation({
@@ -101,6 +102,18 @@ function Home() {
   }
 
 
+  const { profile } = data
+
+  if (!profile) {
+    return;
+  }
+
+  const { isComplete } = profile.safetySetup
+
+
+  if (!isComplete) {
+    return <HomeEmpty />
+  }
 
 
 

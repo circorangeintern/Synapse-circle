@@ -208,9 +208,39 @@ export const userResponseSchema = z.object({
     createdAt: z.string().optional(),
     lastLogin: z.string().optional(),
     accessToken: z.string().optional(),
-    refereshToken: z.string().optional()
+    refereshToken: z.string().optional(),
 })
 
+export const profileResponseSchema = z.object({
+    profile: z.object({
+    createdAt: z.string(),
+    email: z.string(),
+    id: z.string(),
+    isActive: z.boolean(),
+    isVerified: z.boolean(),
+    lastLogin: z.string(),
+    maxContacts: z.number(),
+    name: z.string(),
+    onboardingStep: z.enum(["welcome", "location", "contacts", "university"]),
+    preferences: z.object({autoShareLocation: z.boolean(), alertSound: z.boolean(), onboardingLocation: z.object().nullable()}),
+    profilePicture: z.string().nullable(),
+    safetySetup: z.object({
+            institutionSelected: z.boolean(),
+            trustedContactsAdded: z.boolean(),
+            locationPermissionEnabled: z.boolean(),
+            isComplete: z.boolean()
+        }),
+    stats: z.object({total: z.number(), active: z.number(), cancelled: z.number(), resolved: z.number()}),
+    trustedContacts: z.array(createContactSchema),
+    university: z.string(),
+    universityAcronym: z.string().nullable()
+    }),
+    success: z.boolean(),
+       message: z.string().optional(),
+    code: z.string().optional()
+
+
+})
 
 export const createAuthResponseSchema = <T extends z.ZodType>(dataSchema: T) => {
     return z.object({
@@ -237,6 +267,7 @@ export type SignupResponse = z.infer<typeof signupAuthResponseSchema>
 export type LoginResponse = z.infer<typeof loginAuthResponseSchema>
 export type ContactDTO = z.infer<typeof createContactSchema>
 export type AlertResponse = z.infer<typeof alertHistorySchema> 
+export type ProfileResponse = z.infer<typeof profileResponseSchema>
 
 export type AlertSchema = z.infer<typeof SOSAlertSchema>
 export type userResponse = z.infer<typeof userSchema>

@@ -73,9 +73,13 @@ export default function Profile() {
 
   }
 
+
+  if (!profile) {
+    return;
+  }
+
   const numOfContacts = profile.trustedContacts.length;
 
-  console.log(profile.profilePicture)
 
   return (
     <section className="relative pb-24 -mr-4 -ml-4">
@@ -92,7 +96,7 @@ export default function Profile() {
               <div className="size-10 bg-brand-200 rounded-full flex aspect-video overflow-hidden justify-center items-center">
 
                 {profile.profilePicture ? <img src={`${profile.profilePicture}`}
-                  alt="user profile pictures" className="w-full object cover h-full" /> : <p className="font-bold text-brand-500">{profile.name && getInitials(profile.name!)}</p>}
+                  alt="user profile pictures" className="w-full object cover h-full" /> : <p className="font-bold text-brand-500">{profile.name && getInitials(profile.name)}</p>}
               </div>
 
               <div className="space-y-1">

@@ -10,9 +10,9 @@ function Footer() {
       <Logo />
       <p className="">© 2026 SafeWalk Campus. Built for student safety.</p>
       <div className="font-medium  flex items-center gap-6 pt-2 pb-6">
-        <PrivacyPolicy />
-        <TermsCondition />
-        <a>Support</a>
+        <PrivacyPolicy className="hover:cursor-pointer" />
+        <TermsCondition className="hover:cursor-pointer" />
+        <a className="hover:cursor-pointer">Support</a>
 
 
       </div>

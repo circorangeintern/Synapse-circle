@@ -14,7 +14,7 @@ function RegistrationLayout() {
 
       </div>
 
-      <div className="lg:flex lg:w-125 lg:justify-center lg:m-auto lg:shadow-lg lg:rounded-2xl lg:px-8 pb-4">
+      <div className="lg:flex lg:w-125 lg:justify-center lg:m-auto lg:shadow-lg lg:rounded-2xl lg:px-8 pb-4 bg-neutral-50">
         <Outlet />
       </div>
     </section>

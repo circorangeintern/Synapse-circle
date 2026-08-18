@@ -8,7 +8,7 @@ function DashboardLayout() {
 
     <section className="px-4 h-full flex flex-col flex-1 lg:flex-row lg:gap-8 lg:items-start">
       <DesktopNav />
-      <div className="flex flex-col flex-1 lg:flex-1 h-full lg:justify-center">
+      <div className="flex flex-col flex-1 lg:flex-1 h-full lg:justify-center bg-neutral-50">
         <Outlet />
       </div>
       <MobileNav />

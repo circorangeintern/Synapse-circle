@@ -20,9 +20,9 @@ function Header({ title, caption, name, imageUrl, className }: HeaderProps) {
         {caption && <p className="font-medium text-neutral-700">{caption} {name?.split(" ")[0]}</p>}
         <h2 className="text-neutral-900 font-bold text-2xl">{title}</h2>
       </div>
-      <div className="size-10 bg-brand-200 rounded-full flex aspect-video overflow-hidden justify-center items-center">
+      {imageUrl && <div className="size-10 bg-brand-200 rounded-full flex aspect-video overflow-hidden justify-center items-center">
         {imageUrl ? <img src={`${imageUrl}`} alt="user profile pictures" className="w-full object cover h-full" /> : <p className="font-bold text-brand-500">{name && getInitials(name!)}</p>}
-      </div>
+      </div>}
     </div>
   )
 }

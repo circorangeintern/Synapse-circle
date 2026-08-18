@@ -31,7 +31,7 @@ const MobileNav = ({ isOpen, onClose }: MobileNavProps) => {
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -25 }}
           transition={{ duration: 0.25 }}
-          className="absolute left-0 top-full w-full border-t border-slate-200 bg-white shadow-lg lg:hidden"
+          className="absolute left-0 top-full w-full border-t border-slate-200 bg-white shadow-lg lg:hidden px-4"
         >
           <nav className="container mx-auto flex flex-col py-8">
             <ul className="flex flex-col gap-4 text-sm text-neutral-900 font-medium ">

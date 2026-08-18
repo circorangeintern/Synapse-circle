@@ -1,7 +1,7 @@
 
 import type { LoginCredentials } from "@/components/auth/login";
 import { getToken } from "@/lib/authStorage";
-import {alertHistorySchema, loginAuthResponseSchema, signupAuthResponseSchema, type AlertResponse, type ContactDTO, type LoginResponse, type signupDTO, type SignupResponse } from "@/types";
+import {alertHistorySchema, loginAuthResponseSchema, profileResponseSchema, signupAuthResponseSchema, type AlertResponse, type ContactDTO, type LoginResponse, type ProfileResponse, type signupDTO, type SignupResponse } from "@/types";
 
 const URL = import.meta.env.VITE_BACKEND_URL || "https://synap-circle.onrender.com/api"
 
@@ -298,7 +298,7 @@ export const cancelAlert = async ( {id, reason}: {id: string, reason: string}) =
 }
 
 
-export const userProfile = async () => {
+export const userProfile = async (): Promise<ProfileResponse> => {
 
       const localToken = getToken()
 
@@ -321,8 +321,10 @@ export const userProfile = async () => {
 
     const rawJson = await res.json();
 
+    const result = profileResponseSchema.parse(rawJson)
 
-    return rawJson
+
+    return result
 
 }
 

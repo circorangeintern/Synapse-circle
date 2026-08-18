@@ -80,7 +80,7 @@ function OnboardingLayout() {
               </div>
             </div>
 
-            <div className="flex-1 flex-col flex">
+            <div className="flex-1 flex-col flex bg-neutral-50">
               <Outlet />
             </div>
           </div>
