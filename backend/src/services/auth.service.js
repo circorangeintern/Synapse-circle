@@ -70,17 +70,15 @@ const buildUserResponse = async (user) => {
     profilePicture: user.profilePicture,
   };
 
-  if (user.selectedUniversity) {
-    response.selectedUniversity = user.selectedUniversity;
-  }
-
-  // Add university subdocument if it exists
+  // Add university subdocument if it exists (UNIFORM FIELDS)
   if (user.university?.acronym) {
     response.university = {
       name: user.university.name,
       acronym: user.university.acronym,
-      location: user.university.location,
+      location: user.university.location || null,
     };
+    response.selectedUniversity =
+      user.selectedUniversity || user.university.name;
   }
 
   // Get trusted contacts

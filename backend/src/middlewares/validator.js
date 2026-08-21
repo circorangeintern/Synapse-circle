@@ -245,7 +245,7 @@ export const sosValidation = {
   cancel: [
     body("reason")
       .optional()
-      .isIn(["false_alarm", "user_error", "other"])
+      .isIn(["false_alarm", "user_error", "other", "resolved"])
       .withMessage("Invalid cancellation reason"),
   ],
 

@@ -46,7 +46,7 @@ describe("University API Tests", () => {
       expect(response.body).toHaveProperty("success", true);
       expect(response.body).toHaveProperty(
         "message",
-        "University saved successfully",
+        "University updated successfully. No security contacts found for this university.",
       );
       expect(response.body).toHaveProperty("data");
       expect(response.body.data).toHaveProperty("university");

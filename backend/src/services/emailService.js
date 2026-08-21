@@ -14,6 +14,7 @@ import {
   sosCancelledEmailTemplate,
   sosFalseAlarmEmailTemplate,
   sosConfirmationEmailTemplate,
+  sosResolvedEmailTemplate,
 } from "./templates/index.js";
 
 const SOS_STATUS = {
@@ -34,7 +35,6 @@ class EmailService {
     this.googleMapsApiKey = config.googleMaps?.apiKey;
   }
 
-  // Low-level transport
   /**
    * Sends a single templated email via Brevo. Every template module
    * returns {subject, html, text}; this is the only place that talks to
@@ -638,6 +638,12 @@ class EmailService {
         timestamp: alertData.timestamp,
         message: alertData.message,
         googleMapsApiKey: this.googleMapsApiKey,
+        status: alertData.status,
+        isCancellation: alertData.isCancellation,
+        isResolution: alertData.isResolution,
+        resolvedBy: alertData.resolvedBy,
+        resolutionReason: alertData.resolutionReason,
+        cancellationReason: alertData.cancellationReason,
       });
 
       const result = await this._send({
@@ -662,6 +668,83 @@ class EmailService {
         message: "Failed to send SOS confirmation email",
         error: error.message,
       };
+    }
+  }
+
+  /**
+   * Sends resolved alert emails to all contacts
+   */
+  async sendBulkResolvedAlerts(alertData) {
+    try {
+      const { contacts = [], ...baseData } = alertData;
+
+      if (contacts.length === 0) {
+        return [];
+      }
+
+      const results = await Promise.allSettled(
+        contacts.map((contact) =>
+          this.sendResolvedAlert({ ...baseData, contacts: [contact] }),
+        ),
+      );
+
+      return results.map((result, index) => ({
+        contact: contacts[index],
+        success: result.status === "fulfilled",
+        messageId:
+          result.status === "fulfilled" ? result.value.messageId : null,
+        error: result.status === "rejected" ? result.reason.message : null,
+      }));
+    } catch (error) {
+      logger.error("Bulk resolved alert send error:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Send a single resolved alert email
+   */
+  async sendResolvedAlert(alertData) {
+    const { contacts = [] } = alertData;
+
+    if (this._isEmailSendingDisabled()) {
+      return {
+        success: true,
+        messageId: "test-message-id",
+        recipients: contacts.map((c) => c.email),
+      };
+    }
+
+    try {
+      const recipients = contacts.map((contact) => ({
+        email: contact.email,
+        name: contact.name || contact.email,
+      }));
+      const recipientName = contacts[0]?.name;
+
+      const { subject, html, text } = sosResolvedEmailTemplate({
+        ...alertData,
+        recipientName,
+      });
+
+      const response = await this._send({
+        to: recipients,
+        subject,
+        html,
+        text,
+      });
+
+      logger.info(
+        `Resolved alert email sent successfully: ${response.messageId}`,
+      );
+      return {
+        success: true,
+        messageId: response.messageId,
+        recipients: recipients.map((r) => r.email),
+      };
+    } catch (error) {
+      logger.error("Resolved alert email send error:", error);
+      throw new Error(`Failed to send resolved alert email: ${error.message}`);
     }
   }
 }

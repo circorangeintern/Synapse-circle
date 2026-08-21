@@ -23,6 +23,7 @@ const seedData = async () => {
 
     // Seed Campus Security for Each University
     const securityContacts = [
+      // ---------- UNILAG Security ----------
       {
         name: "UNILAG Security Headquarters",
         phoneNumber: "+2348093541837",
@@ -110,7 +111,7 @@ const seedData = async () => {
         operatingHours: "24/7",
       },
 
-      // ---------- CU Security ----------
+      // ---------- MIVA (MIVA University) Security ----------
       {
         name: "MIVA Security Services",
         phoneNumber: "+2348034567896",
@@ -148,7 +149,7 @@ const seedData = async () => {
           latitude: 6.673,
           longitude: 3.1605,
         },
-        universityAcronym: "CU",
+        universityAcronym: "MIVA",
         isPrimary: false,
         description: "Hostel Security - Student Safety & Welfare",
         operatingHours: "24/7",
@@ -258,14 +259,14 @@ const seedData = async () => {
     const uiCount = securityContacts.filter(
       (c) => c.universityAcronym === "UI",
     ).length;
-    const cuCount = securityContacts.filter(
-      (c) => c.universityAcronym === "CU",
+    const mivaCount = securityContacts.filter(
+      (c) => c.universityAcronym === "MIVA",
     ).length;
 
     console.log("\n🏫 University Security Contacts:");
     console.log(`   🏛️  UNILAG: ${unilagCount} contacts`);
     console.log(`   🏛️  UI: ${uiCount} contacts`);
-    console.log(`   🏛️  CU: ${cuCount} contacts`);
+    console.log(`   🏛️  MIVA: ${mivaCount} contacts`);
     console.log(`   📦 Total: ${securityContacts.length} contacts`);
 
     const securityCount = emergencyContacts.filter(
@@ -295,7 +296,7 @@ const seedData = async () => {
     console.log("\n📋 Universities seeded:");
     console.log("   🏛️  UNILAG - University of Lagos");
     console.log("   🏛️  UI - University of Ibadan");
-    console.log("   🏛️  MV - MIVA University");
+    console.log("   🏛️  MIVA- MIVA University");
 
     process.exit(0);
   } catch (error) {

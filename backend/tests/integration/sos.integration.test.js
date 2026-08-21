@@ -22,6 +22,44 @@ describe("SOS Alert Integration Tests", () => {
     authData = await getAuthToken(testUser);
     userId = authData.userId;
 
+    // Set up user's university
+    await User.findByIdAndUpdate(userId, {
+      university: {
+        acronym: "UI",
+        name: "University of Ibadan",
+      },
+      selectedUniversity: "University of Ibadan",
+    });
+
+    // Create UI-specific campus security
+    await CampusSecurity.findOneAndUpdate(
+      { universityAcronym: "UI" },
+      {
+        name: "UI Campus Security",
+        phoneNumber: "+234123456789",
+        email: "security@ui.edu.ng",
+        location: "Main Campus, UI",
+        universityAcronym: "UI",
+        isActive: true,
+      },
+      { upsert: true },
+    );
+
+    // Create UNILAG security (should NOT be used for UI users)
+    await CampusSecurity.findOneAndUpdate(
+      { universityAcronym: "UNILAG" },
+      {
+        name: "UNILAG Security",
+        phoneNumber: "+234987654321",
+        email: "security@unilag.edu.ng",
+        location: "Main Campus, UNILAG",
+        universityAcronym: "UNILAG",
+        isActive: true,
+      },
+      { upsert: true },
+    );
+
+    // Add a trusted contact
     await request(app)
       .post("/api/contacts")
       .set("Authorization", `Bearer ${authData.accessToken}`)
@@ -31,17 +69,84 @@ describe("SOS Alert Integration Tests", () => {
         relationship: "friend",
       })
       .expect(201);
+  });
 
-    const securityExists = await CampusSecurity.findOne();
-    if (!securityExists) {
-      await CampusSecurity.create({
-        name: "Campus Security",
-        phoneNumber: "+1234567899",
-        email: "security@campus.edu",
-        location: "Main Campus",
-        isActive: true,
+  // Add a test specifically for university-specific security
+  describe("University-specific SOS", () => {
+    it("should only send SOS to user's university security", async () => {
+      const locationData = {
+        latitude: 37.7749,
+        longitude: -122.4194,
+        locationAvailable: true,
+        locationLabel: "UI Main Library",
+      };
+
+      const res = await request(app)
+        .post("/api/sos/trigger")
+        .set("Authorization", `Bearer ${authData.accessToken}`)
+        .send(locationData)
+        .expect(200);
+
+      // Check that ONLY UI security was notified
+      const uiSecurityNotified = res.body.contactsNotified.some(
+        (c) => c.name === "UI Campus Security",
+      );
+      const unilagSecurityNotified = res.body.contactsNotified.some(
+        (c) => c.name === "UNILAG Security",
+      );
+
+      expect(uiSecurityNotified).toBe(true);
+      expect(unilagSecurityNotified).toBe(false);
+    });
+
+    it("should log warning when no security exists for user's university", async () => {
+      // Create a user with a university that has no security
+      const newUser = {
+        email: "nul@campus.edu",
+        name: "No University Login",
+        password: "TestPassword123",
+      };
+
+      const newAuthData = await getAuthToken(newUser);
+
+      // Set university with no security
+      await User.findByIdAndUpdate(newAuthData.userId, {
+        university: {
+          acronym: "NUL",
+          name: "Non-existent University",
+        },
       });
-    }
+
+      // Add a trusted contact
+      await request(app)
+        .post("/api/contacts")
+        .set("Authorization", `Bearer ${newAuthData.accessToken}`)
+        .send({
+          name: "Test Contact",
+          email: "test@example.com",
+          relationship: "friend",
+        })
+        .expect(201);
+
+      const res = await request(app)
+        .post("/api/sos/trigger")
+        .set("Authorization", `Bearer ${newAuthData.accessToken}`)
+        .send({
+          latitude: 37.7749,
+          longitude: -122.4194,
+        })
+        .expect(200);
+
+      // Should still work with trusted contacts
+      expect(res.body).toHaveProperty("success", true);
+      expect(
+        res.body.contactsNotified.some((c) => c.type === "trusted_contact"),
+      ).toBe(true);
+      // No campus security should be notified
+      expect(
+        res.body.contactsNotified.some((c) => c.type === "campus_security"),
+      ).toBe(false);
+    });
   });
 
   describe("Complete SOS Flow", () => {
@@ -144,6 +249,56 @@ describe("SOS Alert Integration Tests", () => {
 
       expect(res.body).toHaveProperty("success", false);
       expect(res.body.message).toContain("Alert cannot be cancelled");
+    });
+    it("should cancel with reason 'resolved' and mark status as resolved", async () => {
+      const triggerRes = await request(app)
+        .post("/api/sos/trigger")
+        .set("Authorization", `Bearer ${authData.accessToken}`)
+        .send({
+          latitude: 37.7749,
+          longitude: -122.4194,
+        })
+        .expect(200);
+
+      const newAlertId = triggerRes.body.alertId;
+
+      const res = await request(app)
+        .post(`/api/sos/cancel/${newAlertId}`)
+        .set("Authorization", `Bearer ${authData.accessToken}`)
+        .send({ reason: "resolved" })
+        .expect(200);
+
+      expect(res.body).toHaveProperty("success", true);
+      expect(res.body).toHaveProperty("status", "resolved");
+      expect(res.body).toHaveProperty("alertId", newAlertId);
+
+      const alert = await SOSAlert.findById(newAlertId);
+      expect(alert.status).toBe("resolved");
+      expect(alert.cancellationReason).toBe("resolved");
+      expect(alert.resolvedBy).toBe("user");
+      expect(alert.resolvedAt).toBeTruthy();
+    });
+
+    it("should reject invalid cancellation reason", async () => {
+      const triggerRes = await request(app)
+        .post("/api/sos/trigger")
+        .set("Authorization", `Bearer ${authData.accessToken}`)
+        .send({
+          latitude: 37.7749,
+          longitude: -122.4194,
+        })
+        .expect(200);
+
+      const newAlertId = triggerRes.body.alertId;
+
+      const res = await request(app)
+        .post(`/api/sos/cancel/${newAlertId}`)
+        .set("Authorization", `Bearer ${authData.accessToken}`)
+        .send({ reason: "invalid_reason" })
+        .expect(400);
+
+      expect(res.body).toHaveProperty("success", false);
+      expect(res.body).toHaveProperty("message", "Invalid cancellation reason");
     });
   });
 

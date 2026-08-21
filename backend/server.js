@@ -48,7 +48,7 @@ const connectDB = async () => {
 
 // CORS Configuration
 const allowedOrigins = [
-  "https://synapse-circle-tau.vercel.app",
+  "https://synapse-circle-zcrc.vercel.app ",
   "https://synap-circle.onrender.com",
   "http://localhost:3000",
   "http://localhost:5000",
@@ -199,6 +199,33 @@ app.get("/health", (req, res) => {
   });
 });
 
+app.get("/keepalive", (req, res) => {
+  res.status(200).json({
+    status: "alive",
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+  });
+});
+
+// Auto-ping itself every 5 minutes
+if (process.env.NODE_ENV === "production") {
+  const keepAlive = async () => {
+    try {
+      const url =
+        process.env.RENDER_URL ||
+        `http://localhost:${process.env.PORT || 5000}`;
+      const response = await fetch(`${url}/health`);
+      console.log(`✅ Keep-alive ping: ${response.status}`);
+    } catch (error) {
+      console.error(`❌ Keep-alive failed: ${error.message}`);
+    }
+  };
+
+  // Ping every 4 minutes (Render free tier sleeps after 15 minutes)
+  setInterval(keepAlive, 4 * 60 * 1000);
+  // Ping on startup
+  setTimeout(keepAlive, 10000);
+}
 // API Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/profile", profileRoutes);

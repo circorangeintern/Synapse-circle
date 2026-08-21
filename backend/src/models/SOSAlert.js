@@ -71,7 +71,7 @@ const sosAlertSchema = new mongoose.Schema(
     },
     cancellationReason: {
       type: String,
-      enum: ["false_alarm", "user_error", "other"],
+      enum: ["false_alarm", "user_error", "other", "resolved"],
     },
     resolvedAt: {
       type: Date,

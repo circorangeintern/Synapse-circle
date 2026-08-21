@@ -28,6 +28,14 @@ describe("SOS Alert API Tests", () => {
     authData = await getAuthToken(testUser);
     userId = authData.userId;
 
+    await User.findByIdAndUpdate(userId, {
+      university: {
+        acronym: "TEST",
+        name: "Test University",
+      },
+      selectedUniversity: "Test University",
+    });
+
     await request(app)
       .post("/api/contacts")
       .set("Authorization", `Bearer ${authData.accessToken}`)
@@ -41,6 +49,7 @@ describe("SOS Alert API Tests", () => {
         email: "security@campus.edu",
         location: "Main Building",
         isActive: true,
+        universityAcronym: "TEST",
       });
     }
   });
@@ -284,6 +293,68 @@ describe("SOS Alert API Tests", () => {
 
       expect(response.body).toHaveProperty("success", false);
       expect(response.body.message).toContain("Alert cannot be cancelled");
+    });
+
+    it('should cancel with reason "resolved" and mark status as resolved', async () => {
+      const triggerResponse = await request(app)
+        .post("/api/sos/trigger")
+        .set("Authorization", `Bearer ${authData.accessToken}`)
+        .send({
+          latitude: 37.7749,
+          longitude: -122.4194,
+        })
+        .expect(200);
+
+      const newAlertId = triggerResponse.body.alertId;
+
+      const response = await request(app)
+        .post(`/api/sos/cancel/${newAlertId}`)
+        .set("Authorization", `Bearer ${authData.accessToken}`)
+        .send({
+          reason: "resolved",
+        })
+        .expect(200);
+
+      expect(response.body).toHaveProperty("success", true);
+      expect(response.body).toHaveProperty("alertId", newAlertId);
+      expect(response.body).toHaveProperty("status", "resolved");
+      expect(response.body).toHaveProperty(
+        "message",
+        "Alert cancelled successfully",
+      );
+
+      const alert = await SOSAlert.findById(newAlertId);
+      expect(alert.status).toBe("resolved");
+      expect(alert.cancellationReason).toBe("resolved");
+      expect(alert.resolvedBy).toBe("user");
+      expect(alert.resolvedAt).toBeTruthy();
+    });
+
+    it("should reject invalid cancellation reason (not in enum)", async () => {
+      const triggerResponse = await request(app)
+        .post("/api/sos/trigger")
+        .set("Authorization", `Bearer ${authData.accessToken}`)
+        .send({
+          latitude: 37.7749,
+          longitude: -122.4194,
+        })
+        .expect(200);
+
+      const newAlertId = triggerResponse.body.alertId;
+
+      const response = await request(app)
+        .post(`/api/sos/cancel/${newAlertId}`)
+        .set("Authorization", `Bearer ${authData.accessToken}`)
+        .send({
+          reason: "invalid_reason",
+        })
+        .expect(400);
+
+      expect(response.body).toHaveProperty("success", false);
+      expect(response.body).toHaveProperty(
+        "message",
+        "Invalid cancellation reason",
+      );
     });
   });
 

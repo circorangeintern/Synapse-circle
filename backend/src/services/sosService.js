@@ -9,78 +9,285 @@ import { logger } from "../utils/logger.js";
 
 class SOSService {
   /**
+   * Get user and validate existence
+   */
+  async _getUser(userId) {
+    if (!userId) {
+      const error = new Error("User authentication required");
+      error.statusCode = 401;
+      throw error;
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      const error = new Error("User not found");
+      error.statusCode = 404;
+      throw error;
+    }
+
+    return user;
+  }
+
+  /**
+   * Get security contacts for user's university
+   */
+  async _getSecurityContacts(user) {
+    if (!user.university?.acronym) {
+      logger.warn(
+        `User ${user._id} has no university set, skipping campus security`,
+      );
+      return [];
+    }
+
+    const securityContacts = await CampusSecurity.find({
+      isActive: true,
+      universityAcronym: user.university.acronym,
+    });
+
+    if (securityContacts.length === 0) {
+      logger.warn(
+        `No campus security found for university: ${user.university.acronym}`,
+        { userId: user._id, university: user.university.acronym },
+      );
+    }
+
+    return securityContacts;
+  }
+
+  /**
+   * Get emergency directory contacts
+   */
+  async _getEmergencyContacts(user) {
+    const emergencyQuery = {
+      isActive: true,
+      isVerified: true,
+    };
+
+    if (user.university?.acronym) {
+      emergencyQuery.$or = [
+        { universityAcronym: user.university.acronym },
+        { universityAcronym: { $exists: false } },
+      ];
+    }
+
+    return await EmergencyDirectory.find(emergencyQuery)
+      .limit(10)
+      .sort({ universityAcronym: 1 });
+  }
+
+  /**
+   * Build recipient list from contacts
+   */
+  _buildRecipients(trustedContacts, securityContacts, emergencyContacts) {
+    const recipients = [];
+
+    trustedContacts.forEach((contact) => {
+      recipients.push({
+        type: "trusted_contact",
+        recipientId: contact._id,
+        email: contact.email,
+        name: contact.name,
+        relationship: contact.relationship,
+      });
+    });
+
+    securityContacts.forEach((security) => {
+      recipients.push({
+        type: "campus_security",
+        recipientId: security._id,
+        email: security.email,
+        name: security.name,
+        relationship: "campus_security",
+      });
+    });
+
+    emergencyContacts.forEach((emergency) => {
+      recipients.push({
+        type: "emergency_directory",
+        recipientId: emergency._id,
+        email: emergency.email,
+        name: emergency.name,
+        relationship: emergency.type,
+      });
+    });
+
+    return recipients;
+  }
+
+  /**
+   * Create alert document
+   */
+  async _createAlert(userId, locationData, user, locationLink) {
+    const {
+      latitude,
+      longitude,
+      locationAvailable = true,
+      locationLabel = null,
+    } = locationData;
+    const activatedAt = new Date();
+
+    return await SOSAlert.create({
+      userId,
+      latitude: latitude || null,
+      longitude: longitude || null,
+      locationAvailable,
+      locationLink,
+      locationLabel,
+      universityName: user.university?.name || null,
+      message:
+        "Help me, I am in an unsafe environment and I feel unsafe, here's my live location.",
+      status: "sent",
+      timeline: [
+        {
+          event: "sos_activated",
+          status: "completed",
+          timestamp: activatedAt,
+        },
+      ],
+    });
+  }
+
+  /**
+   * Save recipient delivery results
+   */
+  async _saveRecipientResults(alertId, userId, recipients, emailResults) {
+    const notifiedAt = new Date();
+    const recipientOperations = recipients.map((recipient, index) => ({
+      insertOne: {
+        document: {
+          alertId: alertId,
+          userId,
+          recipientType: recipient.type,
+          recipientId: recipient.recipientId,
+          name: recipient.name,
+          email: recipient.email,
+          relationship: recipient.relationship,
+          emailStatus: emailResults[index].success ? "delivered" : "failed",
+          emailSentAt: notifiedAt,
+          emailError: emailResults[index].success
+            ? null
+            : emailResults[index].error,
+          delivered: emailResults[index].success,
+        },
+      },
+    }));
+
+    if (recipientOperations.length > 0) {
+      await AlertRecipient.bulkWrite(recipientOperations, { ordered: false });
+    }
+
+    return notifiedAt;
+  }
+
+  /**
+   * Determine status for a set of results
+   */
+  _getStatusForResults(results) {
+    if (results.length === 0) return "skipped";
+    return results.some((r) => r.success) ? "completed" : "failed";
+  }
+
+  /**
+   * Build response timeline
+   */
+  _buildResponseTimeline(
+    activatedAt,
+    notifiedAt,
+    trustedContacts,
+    securityContacts,
+    trustedResults,
+    securityResults,
+  ) {
+    const timeline = [
+      {
+        event: "SOS Triggered",
+        timestamp: activatedAt.toISOString(),
+      },
+    ];
+
+    if (trustedContacts.length > 0) {
+      timeline.push({
+        event: "Trusted Contacts Notified",
+        timestamp: notifiedAt.toISOString(),
+        status: this._getStatusForResults(trustedResults),
+        count: trustedContacts.length,
+      });
+    }
+
+    if (securityContacts.length > 0) {
+      timeline.push({
+        event: "Campus Security Notified",
+        timestamp: notifiedAt.toISOString(),
+        status: this._getStatusForResults(securityResults),
+        count: securityContacts.length,
+      });
+    }
+
+    timeline.push({
+      event: "Location Tracking Started",
+      timestamp: activatedAt.toISOString(),
+    });
+
+    return timeline;
+  }
+
+  /**
+   * Validate location and contacts
+   */
+  _validateLocationAndContacts(
+    latitude,
+    longitude,
+    trustedContacts,
+    securityContacts,
+    emergencyContacts,
+  ) {
+    if (!latitude || !longitude) {
+      const error = new Error(
+        "Location is required to send an SOS alert. Please enable location services.",
+      );
+      error.statusCode = 400;
+      throw error;
+    }
+
+    if (
+      trustedContacts.length === 0 &&
+      securityContacts.length === 0 &&
+      emergencyContacts.length === 0
+    ) {
+      const error = new Error(
+        "No contacts available. Please add trusted contacts first.",
+      );
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+
+  /**
    * Trigger an SOS alert
    */
   async triggerSOS(userId, locationData) {
     try {
-      if (!userId) {
-        const error = new Error("User authentication required");
-        error.statusCode = 401;
-        throw error;
-      }
+      const { latitude, longitude } = locationData;
 
-      const {
-        latitude,
-        longitude,
-        locationAvailable = true,
-        locationLabel = null,
-      } = locationData;
+      // Get user
+      const user = await this._getUser(userId);
 
-      // Get user details
-      const user = await User.findById(userId);
-      if (!user) {
-        const error = new Error("User not found");
-        error.statusCode = 404;
-        throw error;
-      }
-
-      const FIXED_MESSAGE =
-        "Help me, I am in an unsafe environment and I feel unsafe, here's my live location.";
-
-      // Get trusted contacts
+      // Get contacts
       const trustedContacts = await TrustedContact.find({
         userId,
         isActive: true,
       });
+      const securityContacts = await this._getSecurityContacts(user);
+      const emergencyContacts = await this._getEmergencyContacts(user);
 
-      let securityContacts = [];
-      if (user.university?.acronym) {
-        securityContacts = await CampusSecurity.find({
-          isActive: true,
-          universityAcronym: user.university.acronym,
-        });
-      } else {
-        securityContacts = await CampusSecurity.find({
-          isActive: true,
-        });
-      }
-
-      // Get emergency directory contacts
-      const emergencyContacts = await EmergencyDirectory.find({
-        isActive: true,
-        isVerified: true,
-      }).limit(10);
-
-      // Check if there are any recipients
-      if (
-        trustedContacts.length === 0 &&
-        securityContacts.length === 0 &&
-        emergencyContacts.length === 0
-      ) {
-        const error = new Error(
-          "No contacts available. Please add trusted contacts first.",
-        );
-        error.statusCode = 400;
-        throw error;
-      }
-
-      if (!latitude || !longitude) {
-        const error = new Error(
-          "Location is required to send an SOS alert. Please enable location services.",
-        );
-        error.statusCode = 400;
-        throw error;
-      }
+      // Validate
+      this._validateLocationAndContacts(
+        latitude,
+        longitude,
+        trustedContacts,
+        securityContacts,
+        emergencyContacts,
+      );
 
       // Generate location link
       const locationLink =
@@ -88,61 +295,25 @@ class SOSService {
           ? `https://www.google.com/maps?q=${latitude},${longitude}`
           : null;
 
-      // Create the alert record
+      // Create alert
       const activatedAt = new Date();
-      const alert = await SOSAlert.create({
+      const alert = await this._createAlert(
         userId,
-        latitude: latitude || null,
-        longitude: longitude || null,
-        locationAvailable,
+        locationData,
+        user,
         locationLink,
-        locationLabel,
-        universityName: user.university?.name || null,
-        message: FIXED_MESSAGE,
-        status: "sent",
-        timeline: [
-          {
-            event: "sos_activated",
-            status: "completed",
-            timestamp: activatedAt,
-          },
-        ],
-      });
+      );
 
-      // Build the recipient list
-      const recipients = [];
+      // Build recipients
+      const recipients = this._buildRecipients(
+        trustedContacts,
+        securityContacts,
+        emergencyContacts,
+      );
 
-      trustedContacts.forEach((contact) => {
-        recipients.push({
-          type: "trusted_contact",
-          recipientId: contact._id,
-          email: contact.email,
-          name: contact.name,
-          relationship: contact.relationship,
-        });
-      });
-
-      securityContacts.forEach((security) => {
-        recipients.push({
-          type: "campus_security",
-          recipientId: security._id,
-          email: security.email,
-          name: security.name,
-          relationship: "campus_security",
-        });
-      });
-
-      emergencyContacts.forEach((emergency) => {
-        recipients.push({
-          type: "emergency_directory",
-          recipientId: emergency._id,
-          email: emergency.email,
-          name: emergency.name,
-          relationship: emergency.type,
-        });
-      });
-
-      // Prepare and send emails
+      // Prepare email data
+      const FIXED_MESSAGE =
+        "Help me, I am in an unsafe environment and I feel unsafe, here's my live location.";
       const emailData = {
         userName: user.name || user.email,
         userEmail: user.email,
@@ -161,58 +332,33 @@ class SOSService {
         })),
       };
 
+      // Send emails
       const emailResults = await emailService.sendBulkSOSAlerts(emailData);
-      const notifiedAt = new Date();
+      const notifiedAt = await this._saveRecipientResults(
+        alert._id,
+        userId,
+        recipients,
+        emailResults,
+      );
 
-      // Persist delivery results directly as AlertRecipient documents
-      const recipientOperations = recipients.map((recipient, index) => ({
-        insertOne: {
-          document: {
-            alertId: alert._id,
-            userId,
-            recipientType: recipient.type,
-            recipientId: recipient.recipientId,
-            name: recipient.name,
-            email: recipient.email,
-            relationship: recipient.relationship,
-            emailStatus: emailResults[index].success ? "delivered" : "failed",
-            emailSentAt: notifiedAt,
-            emailError: emailResults[index].success
-              ? null
-              : emailResults[index].error,
-            delivered: emailResults[index].success,
-          },
-        },
-      }));
-
-      if (recipientOperations.length > 0) {
-        await AlertRecipient.bulkWrite(recipientOperations, { ordered: false });
-      }
-
+      // Split results
       const trustedResults = emailResults.slice(0, trustedContacts.length);
       const securityResults = emailResults.slice(
         trustedContacts.length,
         trustedContacts.length + securityContacts.length,
       );
 
-      const statusFor = (results) => {
-        if (results.length === 0) return "skipped";
-        return results.some((r) => r.success) ? "completed" : "failed";
-      };
-
       // Add timeline events
       alert.addTimelineEvent(
         "trusted_contacts_notified",
-        statusFor(trustedResults),
+        this._getStatusForResults(trustedResults),
         notifiedAt,
       );
       alert.addTimelineEvent(
         "security_dispatched",
-        statusFor(securityResults),
+        this._getStatusForResults(securityResults),
         notifiedAt,
       );
-
-      // Add location tracking started event
       alert.addTimelineEvent(
         "location_tracking_started",
         "completed",
@@ -222,7 +368,7 @@ class SOSService {
       alert.emailSentAt = notifiedAt;
       await alert.save();
 
-      // Send confirmation email to user (fire and forget)
+      // Send confirmation email (fire and forget)
       Promise.resolve(
         emailService.sendSOSConfirmationToUser(userId, {
           alertId: alert._id,
@@ -236,7 +382,7 @@ class SOSService {
         logger.error("SOS confirmation email failed:", err);
       });
 
-      // Build the response's notification summary with delivery status
+      // Build response
       const notifications = recipients.map((recipient, index) => ({
         type: recipient.type,
         name: recipient.name,
@@ -253,36 +399,14 @@ class SOSService {
         `SOS alert ${alert._id} sent to ${deliveredCount}/${totalCount} recipients`,
       );
 
-      // Build timeline for response
-      const responseTimeline = [
-        {
-          event: "SOS Triggered",
-          timestamp: activatedAt.toISOString(),
-        },
-      ];
-
-      if (trustedContacts.length > 0) {
-        responseTimeline.push({
-          event: "Trusted Contacts Notified",
-          timestamp: notifiedAt.toISOString(),
-          status: statusFor(trustedResults),
-          count: trustedContacts.length,
-        });
-      }
-
-      if (securityContacts.length > 0) {
-        responseTimeline.push({
-          event: "Campus Security Notified",
-          timestamp: notifiedAt.toISOString(),
-          status: statusFor(securityResults),
-          count: securityContacts.length,
-        });
-      }
-
-      responseTimeline.push({
-        event: "Location Tracking Started",
-        timestamp: activatedAt.toISOString(),
-      });
+      const responseTimeline = this._buildResponseTimeline(
+        activatedAt,
+        notifiedAt,
+        trustedContacts,
+        securityContacts,
+        trustedResults,
+        securityResults,
+      );
 
       return {
         success: true,
@@ -330,8 +454,16 @@ class SOSService {
         throw error;
       }
 
-      const finalStatus =
-        reason === "false_alarm" ? "false_alarm" : "cancelled";
+      // Determine final status
+      let finalStatus;
+      if (reason === "false_alarm") {
+        finalStatus = "false_alarm";
+      } else if (reason === "resolved") {
+        finalStatus = "resolved";
+      } else {
+        finalStatus = "cancelled";
+      }
+
       const cancelledAt = new Date();
 
       // Update alert
@@ -344,7 +476,7 @@ class SOSService {
       alert.addTimelineEvent(finalStatus, "completed", cancelledAt);
       await alert.save();
 
-      // Send cancellation notification
+      // Get user
       const user = await User.findById(userId);
       const recipients = await AlertRecipient.find({ alertId });
 
@@ -365,10 +497,34 @@ class SOSService {
           alertId: alert._id.toString(),
           isCancelled: true,
           timestamp: new Date().toISOString(),
+          timeTriggered: alert.createdAt.toISOString(),
+          timeCancelled: cancelledAt.toISOString(),
           contacts,
+          status: finalStatus,
         };
 
+        // Send emails to recipients
         await emailService.sendBulkSOSAlerts(emailData);
+
+        let statusMessage = "cancelled";
+
+        if (finalStatus === "false_alarm") {
+          statusMessage = "marked as a false alarm";
+        } else if (finalStatus === "resolved") {
+          statusMessage = "resolved";
+        }
+
+        // Send confirmation email to user
+        await emailService.sendSOSConfirmationToUser(userId, {
+          alertId: alert._id,
+          latitude: alert.latitude,
+          longitude: alert.longitude,
+          locationLink: alert.locationLink,
+          message: `Your SOS alert has been ${statusMessage}`,
+          timestamp: new Date().toISOString(),
+          status: finalStatus,
+          isCancellation: true,
+        });
 
         // Update recipient records
         await AlertRecipient.updateMany(
@@ -429,6 +585,63 @@ class SOSService {
       alert.resolutionReason = resolutionReason || null;
       alert.addTimelineEvent("resolved", "completed", resolvedAt);
       await alert.save();
+
+      // Send emails to recipients and user
+      const user = await User.findById(userId);
+      const recipients = await AlertRecipient.find({ alertId });
+
+      if (recipients.length > 0) {
+        const contacts = recipients.map((r) => ({
+          email: r.email,
+          name: r.name,
+          relationship: r.relationship,
+          type: r.recipientType,
+        }));
+
+        const emailData = {
+          userName: user.name || user.email,
+          userEmail: user.email,
+          latitude: alert.latitude,
+          longitude: alert.longitude,
+          locationLink: alert.locationLink,
+          alertId: alert._id.toString(),
+          isCancelled: false,
+          timestamp: new Date().toISOString(),
+          timeTriggered: alert.createdAt.toISOString(),
+          timeResolved: resolvedAt.toISOString(),
+          contacts,
+          status: "resolved",
+          resolvedBy,
+          resolutionReason,
+          message: `This SOS alert has been resolved by ${resolvedBy}. Reason: ${resolutionReason || "No reason provided"}`,
+        };
+
+        // Send emails to recipients (use a new template for resolved alerts)
+        await emailService.sendBulkResolvedAlerts(emailData);
+
+        // Send confirmation email to user
+        await emailService.sendSOSConfirmationToUser(userId, {
+          alertId: alert._id,
+          latitude: alert.latitude,
+          longitude: alert.longitude,
+          locationLink: alert.locationLink,
+          message: `Your SOS alert has been resolved by ${resolvedBy}. ${resolutionReason ? "Reason: " + resolutionReason : ""}`,
+          timestamp: new Date().toISOString(),
+          status: "resolved",
+          isResolution: true,
+          resolvedBy,
+          resolutionReason,
+        });
+
+        // Update recipient records
+        await AlertRecipient.updateMany(
+          { alertId },
+          {
+            delivered: true,
+            emailStatus: "delivered",
+          },
+        );
+      }
 
       logger.info(`SOS alert ${alertId} resolved (by: ${resolvedBy})`);
 
@@ -662,6 +875,33 @@ class SOSService {
     } catch (error) {
       logger.error("Get alert error:", error);
       throw error;
+    }
+  }
+
+  /**
+   * Send user confirmation email for any status
+   */
+  async _sendUserConfirmation(userId, alert, status, additionalData = {}) {
+    try {
+      const user = await User.findById(userId);
+      if (!user) return;
+
+      const emailData = {
+        alertId: alert._id,
+        latitude: alert.latitude,
+        longitude: alert.longitude,
+        locationLink: alert.locationLink,
+        timestamp: new Date().toISOString(),
+        status: status,
+        ...additionalData,
+      };
+
+      await emailService.sendSOSConfirmationToUser(userId, emailData);
+    } catch (error) {
+      logger.error(
+        `Failed to send user confirmation for status ${status}:`,
+        error,
+      );
     }
   }
 }

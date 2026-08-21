@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
+    "keepalive": "node keepalive.js",
     "dev": "nodemon server.js",
     "test": "NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
     "test:unit": "NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest tests/unit --runInBand",

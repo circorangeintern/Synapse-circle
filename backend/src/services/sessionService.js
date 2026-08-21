@@ -47,12 +47,6 @@ export const createSession = async (
 
 /**
  * Verify + rotate a refresh token.
- *
- * `emailVerified` on the outgoing token pair is re-synced from the DB
- * rather than trusted from the incoming (possibly stale) refresh token
- * claim. This matters because a token issued at signup with
- * emailVerified: false must reflect verification that happened later
- * via a separate session (e.g. verify-otp), the next time it's rotated.
  */
 export const rotateSession = async (refreshToken, meta = {}) => {
   const decoded = verifyRefreshToken(refreshToken);

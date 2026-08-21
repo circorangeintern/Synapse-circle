@@ -1,6 +1,7 @@
 import User from "../models/User.js";
 import CampusSecurity from "../models/CampusSecurity.js";
 import { logger } from "../utils/logger.js";
+import universitySyncService from "../services/universitySyncService.js";
 
 /**
  * University Controller
@@ -15,8 +16,7 @@ import { logger } from "../utils/logger.js";
 class UniversityController {
   /**
    * POST /api/university
-   * Save user's university during onboarding
-   * Expects: { name, acronym, location }
+   * Save user's university with sync
    */
   saveUniversity = async (req, res) => {
     try {
@@ -31,54 +31,38 @@ class UniversityController {
         });
       }
 
-      const existingUser = await User.findById(userId);
-      if (!existingUser) {
+      const user = await User.findById(userId);
+      if (!user) {
         return res.status(404).json({
           success: false,
           message: "User not found. Please log in again.",
         });
       }
 
-      // Check if university already exists for this user
-      const hasUniversity = existingUser.university?.acronym;
-
-      if (hasUniversity) {
+      // Check if university already exists
+      if (user.university?.acronym) {
         return res.status(409).json({
           success: false,
           message: "University already set for this user. Use PUT to update.",
-          data: {
-            university: existingUser.university,
-          },
+          data: { university: user.university },
         });
       }
 
-      const user = await User.findByIdAndUpdate(
-        userId,
-        {
-          $set: {
-            university: {
-              name: name.trim(),
-              acronym: acronym.trim().toUpperCase(),
-              location: location?.trim() || "",
-            },
-            selectedUniversity: name.trim(),
-            // If currently at university step, move to contacts
-            ...(existingUser.onboardingStep === "university" && {
-              onboardingStep: "contacts",
-            }),
-          },
-        },
-        { new: true, runValidators: true },
-      ).select("-__v -password");
-
-      logger.info(`University saved for user ${userId}: ${acronym}`);
+      // Use the sync service to update university
+      const result = await universitySyncService.updateUserUniversity(userId, {
+        name,
+        acronym,
+        location,
+      });
 
       res.status(200).json({
         success: true,
-        message: "University saved successfully",
+        message: result.message,
         data: {
-          university: user.university,
-          onboardingStep: user.onboardingStep,
+          university: result.newUniversity,
+          hasSecurityContacts: result.hasSecurityContacts,
+          securityContactsCount: result.securityContactsCount,
+          onboardingStep: result.newUniversity?.onboardingStep || "contacts",
         },
       });
     } catch (error) {
@@ -124,16 +108,15 @@ class UniversityController {
 
   /**
    * PUT /api/university
-   * Update user's university
-   * Expects: { name, acronym, location } - at least one required
+   * Update user's university with sync
    */
   updateUniversity = async (req, res) => {
     try {
       const { name, acronym, location } = req.body;
       const userId = req.userId;
 
-      const existingUser = await User.findById(userId);
-      if (!existingUser) {
+      const user = await User.findById(userId);
+      if (!user) {
         return res.status(404).json({
           success: false,
           message: "User not found. Please log in again.",
@@ -149,32 +132,26 @@ class UniversityController {
         });
       }
 
-      const updateData = {};
-      if (name) {
-        updateData["university.name"] = name.trim();
-        updateData.selectedUniversity = name.trim();
-      }
-      if (acronym) {
-        updateData["university.acronym"] = acronym.trim().toUpperCase();
-      }
-      if (location) {
-        updateData["university.location"] = location.trim();
-      }
+      // Build update data with current values as fallbacks
+      const updateData = {
+        name: name || user.university?.name,
+        acronym: acronym || user.university?.acronym,
+        location: location || user.university?.location,
+      };
 
-      const user = await User.findByIdAndUpdate(
+      // Use the sync service to update university
+      const result = await universitySyncService.updateUserUniversity(
         userId,
-        { $set: updateData },
-        { new: true, runValidators: true },
-      ).select("university onboardingStep");
-
-      logger.info(`University updated for user ${userId}`);
+        updateData,
+      );
 
       res.status(200).json({
         success: true,
-        message: "University updated successfully",
+        message: result.message,
         data: {
-          university: user.university,
-          onboardingStep: user.onboardingStep,
+          university: result.newUniversity,
+          hasSecurityContacts: result.hasSecurityContacts,
+          securityContactsCount: result.securityContactsCount,
         },
       });
     } catch (error) {

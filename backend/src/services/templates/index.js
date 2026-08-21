@@ -7,3 +7,4 @@ export { sosAlertEmailTemplate } from "./sos/sosAlert.js";
 export { sosCancelledEmailTemplate } from "./sos/sosCancelled.js";
 export { sosFalseAlarmEmailTemplate } from "./sos/sosFalseAlarm.js";
 export { sosConfirmationEmailTemplate } from "./sos/sosConfirmation.js";
+export { sosResolvedEmailTemplate } from "./sos/sosResolved.js";
